@@ -1,103 +1,219 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import ApiResponse from "@/types/ApiResponse";
+import axios from "axios";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+type Message = {
+  sender: "user" | "bot";
+  text: string;
+};
+
+export default function ChatBox() {
+  const [chat, setChat] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const clearChat = () => {
+    setChat([]);
+    setInput("");
+    window.speechSynthesis.cancel();
+  };
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const speak = useCallback((text: string) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = window.speechSynthesis.getVoices();
+
+    const selectedVoice = voices.find((voice) =>
+      ["female", "samantha", "zira", "google us"].some((keyword) =>
+        voice.name.toLowerCase().includes(keyword)
+      )
+    );
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+
+    utterance.pitch = 1;
+    utterance.rate = 1;
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const sendMessage = useCallback(
+    async (textOverride?: string) => {
+      const userText = textOverride || input.trim();
+      if (!userText || loading) return;
+
+      const userMessage: Message = { sender: "user", text: userText };
+      setChat((prev) => [...prev, userMessage]);
+      setInput("");
+      setLoading(true);
+
+      
+      if (userText.toLowerCase().includes("open youtube")) {
+        const botReply = "Opening youtube for you...";
+        const botMessage: Message = { sender: "bot", text: botReply };
+        setChat((prev) => [...prev, botMessage]);
+        speak(botReply);
+        window.open("https://www.youtube.com", "_blank");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await axios.post<ApiResponse>("/api/send-message", {
+          text: userText,
+        });
+
+        const botText = res.data.bot.text || "Sorry, I didn't understand that.";
+        const botMessage: Message = { sender: "bot", text: botText };
+        setChat((prev) => [...prev, botMessage]);
+        speak(botText);
+      } catch (error) {
+        console.error("Error sending message:", error);
+        const errorMsg = "Error getting response from AI. Try again.";
+        setChat((prev) => [...prev, { sender: "bot", text: errorMsg }]);
+        speak(errorMsg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [input, loading, speak]
+  );
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chat, loading]);
+
+  useEffect(() => {
+    const loadVoices = () => {
+      window.speechSynthesis.getVoices();
+    };
+
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const win = window as Window & typeof globalThis;
+      const RecognitionConstructor = win.SpeechRecognition || win.webkitSpeechRecognition;
+
+      if (RecognitionConstructor) {
+        const recognition = new RecognitionConstructor();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          const voiceText = event.results[0][0].transcript;
+          setInput(voiceText);
+          sendMessage(voiceText);
+        };
+
+        recognition.onerror = (event: SpeechRecognition) => {
+          console.error("Speech recognition error:", event.error);
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+  }, [sendMessage]);
+
+  const startListening = useCallback(() => { 
+      recognitionRef.current?.start();
+  },[]);
+
+  useEffect(() => {
+    const handleHotkey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        startListening();
+      }
+    };
+    window.addEventListener("keydown", handleHotkey);
+    return () => window.removeEventListener("keydown", handleHotkey);
+  }, [startListening]);
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="min-h-screen bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] text-white flex flex-col p-6">
+      <h1 className="text-4xl font-extrabold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 drop-shadow-lg">
+        Voxa AI — Personal Assistant
+      </h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+      <div className="flex-1 overflow-y-auto space-y-4 border border-blue-700/40 rounded-3xl p-6 bg-white/10 backdrop-blur-sm shadow-[0_0_25px_rgba(0,200,255,0.2)]">
+        {chat.map((msg, i) => (
+          <div key={i} className={`w-full flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`inline-block px-5 py-3 rounded-xl text-sm md:text-base max-w-[80%] whitespace-pre-wrap break-words shadow-md ${
+                msg.sender === "user"
+                  ? "bg-blue-600 text-white rounded-br-none"
+                  : "bg-gray-900 text-white rounded-bl-none"
+              }`}
+            >
+              {msg.text.includes("```") ? (
+                <pre className="bg-black/80 text-green-300 p-3 rounded-lg overflow-x-auto text-sm">
+                  <code>{msg.text.replace(/```/g, "")}</code>
+                </pre>
+              ) : (
+                <span>{msg.text}</span>
+              )}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="w-full flex justify-start">
+            <div className="bg-gray-700 px-4 py-2 italic rounded-xl animate-pulse w-fit">Typing...</div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="mt-6 flex flex-col md:flex-row items-center gap-3">
+        <input
+          className="flex-1 px-5 py-4 rounded-2xl bg-[#1a1b1f] border border-gray-700 text-white outline-none focus:ring-2 focus:ring-cyan-500 placeholder:text-gray-400"
+          placeholder="Ask anything..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+        />
+        <button
+          className="bg-cyan-600 hover:bg-cyan-700 px-6 py-4 rounded-2xl text-white font-semibold transition disabled:opacity-50 shadow-md"
+          onClick={() => sendMessage()}
+          disabled={loading}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          Send
+        </button>
+        <button
+          className={`${
+            isSpeaking ? "bg-yellow-600 hover:bg-yellow-700" : "bg-green-600 hover:bg-green-700"
+          } px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md`}
+          onClick={startListening}
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          {isSpeaking || window.speechSynthesis.speaking ? "Stop" : "Speak"}
+        </button>
+        <button
+          className="bg-red-600 hover:bg-red-700 px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md"
+          onClick={clearChat}
         >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          Clear Chat
+        </button>
+      </div>
+
+      <p className="text-center text-sm mt-4 text-gray-400">
+        Press <span className="text-cyan-300 font-semibold">Ctrl + Shift + A</span> to activate voice input
+      </p>
     </div>
   );
 }
