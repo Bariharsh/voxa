@@ -61,12 +61,33 @@ export default function ChatBox() {
       setLoading(true);
 
       
-      if (userText.toLowerCase().includes("open youtube")) {
+      const lowerText = userText.toLowerCase();
+
+      if (lowerText.includes("wake up") || lowerText.includes("hey voxa")) {
+        const botReply = "I am awake and ready to assist you!";
+        const botMessage: Message = { sender: "bot", text: botReply };
+        setChat((prev) => [...prev, botMessage]);
+        speak(botReply);
+        // Placeholder for additional tasks to be triggered on wake-up
+        setLoading(false);
+        return;
+      }
+
+      if (lowerText.includes("open youtube")) {
         const botReply = "Opening youtube for you...";
         const botMessage: Message = { sender: "bot", text: botReply };
         setChat((prev) => [...prev, botMessage]);
         speak(botReply);
         window.open("https://www.youtube.com", "_blank");
+        setLoading(false);
+        return;
+      }
+      
+      if (userText.toLowerCase().includes("Wake up") || userText.toLowerCase().includes("Hey Voxa")) {
+        const botReply = "Welcome Sir, How can i help you";
+        const botMessage: Message = { sender: "bot", text: botReply };
+        setChat((prev) => [...prev, botMessage]);
+        speak(botReply);
         setLoading(false);
         return;
       }
@@ -201,7 +222,7 @@ export default function ChatBox() {
           } px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md`}
           onClick={startListening}
         >
-          {isSpeaking || window.speechSynthesis.speaking ? "Stop" : "Speak"}
+          Speak
         </button>
         <button
           className="bg-red-600 hover:bg-red-700 px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md"
