@@ -1,8 +1,8 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import ApiResponse from "@/types/ApiResponse";
 import axios from "axios";
-import { useCallback, useEffect, useRef, useState } from "react";
 
 type Message = {
   sender: "user" | "bot";
@@ -13,9 +13,8 @@ export default function ChatBox() {
   const [chat, setChat] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const clearChat = () => {
     setChat([]);
@@ -60,7 +59,6 @@ export default function ChatBox() {
       setInput("");
       setLoading(true);
 
-      
       const lowerText = userText.toLowerCase();
 
       if (lowerText.includes("wake up") || lowerText.includes("hey voxa")) {
@@ -68,26 +66,16 @@ export default function ChatBox() {
         const botMessage: Message = { sender: "bot", text: botReply };
         setChat((prev) => [...prev, botMessage]);
         speak(botReply);
-        // Placeholder for additional tasks to be triggered on wake-up
         setLoading(false);
         return;
       }
 
       if (lowerText.includes("open youtube")) {
-        const botReply = "Opening youtube for you...";
+        const botReply = "Opening YouTube for you...";
         const botMessage: Message = { sender: "bot", text: botReply };
         setChat((prev) => [...prev, botMessage]);
         speak(botReply);
         window.open("https://www.youtube.com", "_blank");
-        setLoading(false);
-        return;
-      }
-      
-      if (userText.toLowerCase().includes("Wake up") || userText.toLowerCase().includes("Hey Voxa")) {
-        const botReply = "Welcome Sir, How can i help you";
-        const botMessage: Message = { sender: "bot", text: botReply };
-        setChat((prev) => [...prev, botMessage]);
-        speak(botReply);
         setLoading(false);
         return;
       }
@@ -115,45 +103,32 @@ export default function ChatBox() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [chat, loading]);
+  }, [chat]);
 
   useEffect(() => {
-    const loadVoices = () => {
+    window.speechSynthesis.onvoiceschanged = () => {
       window.speechSynthesis.getVoices();
     };
-
-    window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
+  // Wake-word IPC hook (Picovoice)
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const win = window as Window & typeof globalThis;
-      const RecognitionConstructor = win.SpeechRecognition || win.webkitSpeechRecognition;
-
-      if (RecognitionConstructor) {
-        const recognition = new RecognitionConstructor();
-        recognition.lang = "en-US";
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-          const voiceText = event.results[0][0].transcript;
-          setInput(voiceText);
-          sendMessage(voiceText);
-        };
-
-        recognition.onerror = (event: SpeechRecognition) => {
-          console.error("Speech recognition error:", event.error);
-        };
-
-        recognitionRef.current = recognition;
-      }
+    if (typeof window !== "undefined" && window.voiceAPI) {
+      window.voiceAPI.onWakeWord(() => {
+        const triggerText = "Hey Voxa";
+        setInput(triggerText);
+        sendMessage(triggerText);
+      });
     }
   }, [sendMessage]);
 
-  const startListening = useCallback(() => { 
-      recognitionRef.current?.start();
-  },[]);
+  const startListening = useCallback(() => {
+    window.voiceAPI?.startWakeWord();
+  }, []);
+
+  const stopListening = useCallback(() => {
+    window.voiceAPI?.stopWakeWord();
+  }, []);
 
   useEffect(() => {
     const handleHotkey = (e: KeyboardEvent) => {
@@ -174,7 +149,10 @@ export default function ChatBox() {
 
       <div className="flex-1 overflow-y-auto space-y-4 border border-blue-700/40 rounded-3xl p-6 bg-white/10 backdrop-blur-sm shadow-[0_0_25px_rgba(0,200,255,0.2)]">
         {chat.map((msg, i) => (
-          <div key={i} className={`w-full flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
+          <div
+            key={i}
+            className={`w-full flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
+          >
             <div
               className={`inline-block px-5 py-3 rounded-xl text-sm md:text-base max-w-[80%] whitespace-pre-wrap break-words shadow-md ${
                 msg.sender === "user"
@@ -222,7 +200,13 @@ export default function ChatBox() {
           } px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md`}
           onClick={startListening}
         >
-          Speak
+          Start Wake Word
+        </button>
+        <button
+          className="bg-orange-600 hover:bg-orange-700 px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md"
+          onClick={stopListening}
+        >
+          Stop Wake Word
         </button>
         <button
           className="bg-red-600 hover:bg-red-700 px-6 py-4 rounded-2xl text-white font-semibold transition shadow-md"
@@ -233,7 +217,7 @@ export default function ChatBox() {
       </div>
 
       <p className="text-center text-sm mt-4 text-gray-400">
-        Press <span className="text-cyan-300 font-semibold">Ctrl + Shift + A</span> to activate voice input
+        Press <span className="text-cyan-300 font-semibold">Ctrl + Shift + A</span> to activate wake-word
       </p>
     </div>
   );
